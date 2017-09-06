@@ -1,0 +1,8 @@
+name = Jireh Serving Assignment
+description = Helper for arranging serving post
+
+package = JIREH
+core = 7.x
+
+project = "jireh_serving_assignment"
+version = "7.x-1.0"

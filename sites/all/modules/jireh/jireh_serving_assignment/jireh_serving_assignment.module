@@ -1,0 +1,134 @@
+<?php
+function jireh_serving_assignment_form_alter(&$form, &$form_state, $form_id) {
+    switch($form_id) {
+        case 'my_form_id':
+
+            $form['actions']['draft'] = array(
+                '#type' => 'submit',
+                '#value' => t('Save draft'),
+                '#weight' => '9',
+                '#submit' => array('save_draft_submit'),
+                '#validate' => array('save_draft_validate'),
+                '#attributes' => array(
+                    'class' => array('cancel'), // add the class cancel will skip any clientside validation
+                ),
+                //'limit_validation_errors' => array(), // this should be enough to skip validation however does not work for me
+            );
+
+            break;
+    }
+}
+
+function save_draft_validate($form, &$form_state) {
+    // Set as unpublished.
+    $form_state['values']['status'] = 0;
+    // Force validation.
+    $errors = &drupal_static('form_set_error', NULL, TRUE);
+  //  dd("save_draft_validate--------------------------------------------------------");
+    //dd($form);
+
+}
+
+function save_draft_submit($form, &$form_state) {
+    // clear error messsages
+    drupal_get_messages();
+    // save the node
+    node_form_submit($form, $form_state);
+    $form_state['redirect'] = 'node/'.$form_state['nid'].'/edit';
+}
+
+function jireh_serving_assignment_node_validate($node, $form, &$form_state) {
+    if ( $node->type == 'one_time_serving_assignment' ) {
+        $lang = $node->language;
+        $isFinalizedFlag = $node->field_finalized[$lang][0]['value'];
+        $validateStatus = ($isFinalizedFlag) ? 'error': 'warning';
+
+        $terms = jireh_serving_assignment_get_term_entity_array('one_time_serving_post');
+
+        $postFieldHashset = array();
+        foreach ($terms as $term) {
+            $postFieldHashset[$term->name] = true;
+        }
+
+
+
+        $servantToPostArray = array();
+        foreach ($form as $field => $value) {
+            if (is_array($value) && preg_match ('/^field_/', $field) && isset($postFieldHashset[$value[$lang]['#title']])) {
+                $servingPostName = $value[$lang]['#title'];
+                $servant_tid = $form_state['input'][$field][$lang];
+
+    //            $servant = $value[$lang]['#options'][$servant_tid];
+                if (!isset($servantToPostArray[$servant_tid]))
+                    $servantToPostArray[$servant_tid] = array();
+                $servantToPostArray[$servant_tid][] = $servingPostName;
+            }
+        }
+    //    dd($servantToPostArray);
+
+        // Find all corresponding conflicted posts for each assigned post
+        $conflictedPostArray = jireh_serving_assignment_get_conflicted_post_arr($servantToPostArray, $lang, $terms);
+
+        foreach ($conflictedPostArray as $assignedPost => $correspondingConflictedPosts) {
+            if (sizeof($correspondingConflictedPosts) > 0) {
+                $errorMsg = $assignedPost . ' is conflicted with: ' . implode(", ", $correspondingConflictedPosts);
+                drupal_set_message($errorMsg, $validateStatus);
+            }
+        }
+    }
+}
+
+function jireh_serving_assignment_get_conflicted_post_arr($servantToPostArray, $lang, &$terms) {
+    $conflictedPostArray = array();
+    foreach ($servantToPostArray as $assignedPosts) {
+        foreach ($assignedPosts as $assignedPost) {
+
+            $possibleConflictedPostList = jireh_serving_assignment_get_possible_conflicted_post_obj_list($assignedPost, $lang, $terms);
+            $conflictCount = 0;
+            $conflictedPostArray[$assignedPost] = array();
+            foreach ($possibleConflictedPostList as $possibleConflictedPostName => $possibleConflictedPost) {
+                if (in_array($possibleConflictedPostName, $assignedPosts) && $possibleConflictedPostName != $assignedPost)
+                        $conflictedPostArray[$assignedPost][] = $possibleConflictedPostName;
+            }
+            
+        }
+    }
+    return $conflictedPostArray;
+}
+
+function jireh_serving_assignment_get_possible_conflicted_post_obj_list($postName, $lang, &$terms = null) {
+    if (is_null($terms))
+        $terms = jireh_serving_assignment_get_term_entity_array('one_time_serving_post');
+    
+    // Get the Obj of the postName
+    $post = null;
+    foreach ($terms as $tid => $postObj) {
+        if ($postObj->name == $postName) {
+            $post = $postObj;
+            break;
+        }
+    }
+    if (is_null($post) || sizeof($post->field_conflicted_post) == 0)
+        return array();
+    
+    // Get conflicted post list obj array
+    $postList = array();
+    $conflictedPosts = $post->field_conflicted_post[$lang];
+    foreach ($conflictedPosts as $arr) {
+        $tid = $arr['tid'];
+        $conflictedPostName = $terms[$tid]->name;
+        $conflictedPostObj = $terms[$tid];
+        $postList[$conflictedPostName] = $conflictedPostObj;
+    }
+
+    return $postList;
+}
+
+function jireh_serving_assignment_get_term_entity_array($machine_name) {
+    $vocabulary = taxonomy_vocabulary_machine_name_load($machine_name);
+    $terms = entity_load('taxonomy_term', FALSE, array('vid' => $vocabulary->vid));
+    return $terms;
+}
+
+
+
