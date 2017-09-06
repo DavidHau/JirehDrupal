@@ -41,7 +41,10 @@ function jireh_serving_assignment_node_validate($node, $form, &$form_state) {
     if ( $node->type == 'one_time_serving_assignment' ) {
         $lang = $node->language;
         $isFinalizedFlag = $node->field_finalized[$lang][0]['value'];
-        $validateStatus = ($isFinalizedFlag) ? 'error': 'warning';
+        $validateStatus = 'warning';
+        
+        if ($isFinalizedFlag)
+            form_set_error('changed', t('This assignment was approved. It cannot be saved. Roll back assignment status to "Pending Approval" before editing.'));
 
         $terms = jireh_serving_assignment_get_term_entity_array('one_time_serving_post');
 
